@@ -46,6 +46,16 @@ class _Indicators:
     last_earnings_eps_estimate: float | None = None
     last_earnings_surprise_pct: float | None = None
     rsi14: float | None = None
+    # Fundamentals + classification (from yfinance Ticker.info, one extra call)
+    forward_pe: float | None = None
+    trailing_pe: float | None = None
+    earnings_growth_yoy: float | None = None
+    revenue_growth_yoy: float | None = None
+    market_cap: int | None = None
+    avg_dollar_volume_10d: float | None = None  # USD, raw (use /1e6 for $M)
+    sector: str | None = None
+    industry: str | None = None
+    short_name: str | None = None
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -170,6 +180,33 @@ def fetch_snapshot(ticker: str, *, use_cache: bool = True) -> dict[str, Any]:
                         pass
         if ind.next_earnings_date is None and not future.empty:
             ind.next_earnings_date = future.index[0].isoformat()
+
+    # Fundamentals from .info — one extra call but covered by the same cache.
+    info = _safe("info", lambda: t.info, ind.errors)
+    if isinstance(info, dict):
+        def _f(key: str) -> float | None:
+            v = info.get(key)
+            try:
+                if v is None:
+                    return None
+                v = float(v)
+                return None if math.isnan(v) else v
+            except (TypeError, ValueError):
+                return None
+
+        ind.forward_pe = _f("forwardPE")
+        ind.trailing_pe = _f("trailingPE")
+        ind.earnings_growth_yoy = _f("earningsGrowth")
+        ind.revenue_growth_yoy = _f("revenueGrowth")
+        mcap = info.get("marketCap")
+        if isinstance(mcap, (int, float)) and not (isinstance(mcap, float) and math.isnan(mcap)):
+            ind.market_cap = int(mcap)
+        adv10 = _f("averageDailyVolume10Day")
+        if adv10 is not None and ind.price is not None:
+            ind.avg_dollar_volume_10d = round(adv10 * ind.price, 0)
+        ind.sector = info.get("sector") or None
+        ind.industry = info.get("industry") or None
+        ind.short_name = info.get("shortName") or None
 
     return _finalize(ticker, ind)
 
