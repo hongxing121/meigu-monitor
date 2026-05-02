@@ -1,0 +1,21 @@
+[project]
+name = "meigu-monitor"
+version = "0.1.0"
+description = "AI-driven US stock watchlist monitor. Fetches indicators, exposes them to a remote LLM (via OpenClaw), records judgments, and shows a local dashboard."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+    "pydantic>=2.6",
+    "yfinance>=0.2.40",
+    "lxml>=5.0",
+    "python-multipart>=0.0.9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

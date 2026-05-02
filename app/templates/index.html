@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>meigu monitor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  [x-cloak] { display: none !important; }
+  .pulse-dot { animation: pulse-dot 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  pre.context { white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+<div x-data="app()" x-init="boot()" x-cloak class="min-h-screen">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
+      <div class="flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot"></span>
+        <h1 class="text-lg font-semibold tracking-tight">meigu monitor</h1>
+      </div>
+      <nav class="flex gap-1 ml-4">
+        <button @click="tab='watchlist'"
+          :class="tab==='watchlist' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+          class="px-3 py-1.5 rounded-md text-sm font-medium">Watchlist
+          <span class="ml-1 text-xs opacity-70" x-text="status.active_count"></span>
+        </button>
+        <button @click="tab='activity'"
+          :class="tab==='activity' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+          class="px-3 py-1.5 rounded-md text-sm font-medium">Activity
+          <span class="ml-1 text-xs opacity-70" x-text="status.triggered_24h + ' / 24h'"></span>
+        </button>
+      </nav>
+      <div class="ml-auto flex items-center gap-3 text-xs text-slate-500">
+        <template x-if="status.last_tick_run">
+          <span>last tick: <span x-text="fmtTime(status.last_tick_run.started_at)"></span>
+            · checked <span x-text="status.last_tick_run.total_rules"></span>
+            · triggered <span class="font-semibold text-rose-600" x-text="status.last_tick_run.triggered_count"></span>
+          </span>
+        </template>
+        <button @click="refreshAll()" class="px-2 py-1 rounded border border-slate-300 hover:bg-slate-50 text-slate-700">
+          Refresh
+        </button>
+        <button @click="showAdd=true" class="px-3 py-1 rounded bg-slate-900 text-white hover:bg-slate-700">
+          + New rule
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+
+    <!-- Watchlist tab -->
+    <section x-show="tab==='watchlist'">
+      <template x-if="watchlist.length === 0">
+        <div class="text-center py-16 text-slate-400">
+          <p class="mb-3">还没有 watchlist 规则。</p>
+          <button @click="showAdd=true" class="px-4 py-2 rounded bg-slate-900 text-white">
+            添加第一条规则
+          </button>
+        </div>
+      </template>
+
+      <div class="space-y-3">
+        <template x-for="item in watchlist" :key="item.id">
+          <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+            <!-- summary row -->
+            <button @click="toggle(item.id)" class="w-full px-4 py-3 flex items-center gap-4 hover:bg-slate-50 text-left">
+              <span class="font-mono font-semibold text-base w-20 shrink-0" x-text="item.ticker"></span>
+              <span class="text-sm text-slate-700 flex-1 truncate" x-text="item.title"></span>
+
+              <template x-if="item.last_judgment">
+                <span class="flex items-center gap-2 text-xs">
+                  <span :class="item.last_judgment.triggered
+                                ? (item.last_judgment.urgency==='high' ? 'bg-rose-100 text-rose-700'
+                                  : item.last_judgment.urgency==='med' ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-yellow-100 text-yellow-700')
+                                : 'bg-slate-100 text-slate-500'"
+                        class="px-2 py-0.5 rounded font-medium">
+                    <span x-text="item.last_judgment.triggered ? '🔔 ' + (item.last_judgment.urgency||'') : '✓ no'"></span>
+                  </span>
+                  <span class="text-slate-400" x-text="fmtTime(item.last_judgment.created_at)"></span>
+                </span>
+              </template>
+              <template x-if="!item.last_judgment">
+                <span class="text-xs text-slate-400">还没判断过</span>
+              </template>
+
+              <span :class="item.status==='active' ? 'bg-emerald-50 text-emerald-700'
+                            : item.status==='paused' ? 'bg-amber-50 text-amber-700'
+                            : 'bg-slate-100 text-slate-500'"
+                    class="ml-2 px-2 py-0.5 text-xs rounded uppercase tracking-wide font-medium"
+                    x-text="item.status"></span>
+              <span class="text-slate-400 text-xs" x-text="open[item.id] ? '▾' : '▸'"></span>
+            </button>
+
+            <!-- expanded detail -->
+            <div x-show="open[item.id]" x-transition class="px-4 pb-4 pt-1 border-t border-slate-100">
+              <div class="grid md:grid-cols-2 gap-4 mt-3">
+                <div>
+                  <label class="text-xs uppercase tracking-wide text-slate-500">Context (AI 投研对话)</label>
+                  <pre class="context mt-1 text-sm bg-slate-50 rounded p-3 max-h-72 overflow-auto" x-text="item.context"></pre>
+                  <label class="text-xs uppercase tracking-wide text-slate-500 mt-3 block">Action hint</label>
+                  <p class="text-sm mt-1" x-text="item.action_hint || '(无)'"></p>
+                  <p class="text-xs text-slate-500 mt-3">
+                    cooldown: <span x-text="item.cooldown_hours"></span>h
+                    · created <span x-text="fmtTime(item.created_at)"></span>
+                  </p>
+
+                  <div class="mt-4 flex flex-wrap gap-2">
+                    <button @click="snapshot(item.ticker)"
+                            class="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50">查看快照</button>
+                    <button @click="setStatus(item, item.status==='active' ? 'paused' : 'active')"
+                            class="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50">
+                      <span x-text="item.status==='active' ? 'Pause' : 'Activate'"></span>
+                    </button>
+                    <button @click="editing = JSON.parse(JSON.stringify(item)); showEdit=true"
+                            class="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50">Edit</button>
+                    <button @click="del(item)"
+                            class="px-2 py-1 text-xs rounded border border-rose-300 text-rose-700 hover:bg-rose-50">Delete</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="text-xs uppercase tracking-wide text-slate-500">Recent judgments</label>
+                  <div class="mt-1 space-y-2 max-h-96 overflow-auto pr-1">
+                    <template x-if="!detail[item.id]">
+                      <p class="text-sm text-slate-400">点击展开会自动加载</p>
+                    </template>
+                    <template x-for="j in (detail[item.id] || [])" :key="j.id">
+                      <div class="text-sm border border-slate-100 rounded p-2">
+                        <div class="flex items-center gap-2">
+                          <span :class="j.triggered ? 'text-rose-600' : 'text-slate-500'"
+                                x-text="j.triggered ? '🔔 ' + j.urgency : '✓'"></span>
+                          <span class="text-xs text-slate-400" x-text="fmtTime(j.created_at)"></span>
+                        </div>
+                        <p class="mt-1 text-slate-700" x-text="j.reason"></p>
+                        <p class="mt-1 text-slate-600 italic" x-show="j.action" x-text="'→ ' + j.action"></p>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- Activity tab -->
+    <section x-show="tab==='activity'">
+      <div class="flex items-center gap-3 mb-3">
+        <label class="text-sm flex items-center gap-2">
+          <input type="checkbox" x-model="onlyTriggered" @change="loadActivity()" />
+          <span>只看已触发</span>
+        </label>
+      </div>
+
+      <div class="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
+        <template x-if="activity.length === 0">
+          <div class="p-6 text-center text-slate-400">还没有判断记录。让 OpenClaw 调一次 /api/tick-payload 试试。</div>
+        </template>
+        <template x-for="j in activity" :key="j.id">
+          <div class="p-3 flex gap-3 text-sm">
+            <span :class="j.triggered
+                          ? (j.urgency==='high' ? 'text-rose-600'
+                            : j.urgency==='med' ? 'text-amber-600'
+                            : 'text-yellow-600')
+                          : 'text-slate-400'"
+                  class="text-lg leading-none mt-0.5"
+                  x-text="j.triggered ? '🔔' : '·'"></span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-mono font-semibold" x-text="j.ticker"></span>
+                <span class="text-slate-700 truncate" x-text="j.title"></span>
+                <span x-show="j.triggered"
+                      :class="j.urgency==='high' ? 'bg-rose-100 text-rose-700'
+                              : j.urgency==='med' ? 'bg-amber-100 text-amber-700'
+                              : 'bg-yellow-100 text-yellow-700'"
+                      class="text-xs px-1.5 py-0.5 rounded uppercase"
+                      x-text="j.urgency"></span>
+                <span class="ml-auto text-xs text-slate-400 shrink-0" x-text="fmtTime(j.created_at)"></span>
+              </div>
+              <p class="text-slate-700 mt-0.5" x-text="j.reason"></p>
+              <p class="text-slate-500 italic mt-0.5" x-show="j.action" x-text="'→ ' + j.action"></p>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+  </main>
+
+  <!-- Add modal -->
+  <div x-show="showAdd" x-transition.opacity class="fixed inset-0 bg-black/40 z-40 flex items-start justify-center pt-16 px-4">
+    <div @click.outside="showAdd=false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
+      <h2 class="text-lg font-semibold mb-4">添加 watchlist 规则</h2>
+      <form @submit.prevent="create()">
+        <div class="grid md:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">Ticker</span>
+            <input x-model="form.ticker" required maxlength="12"
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 font-mono uppercase" placeholder="COHR" />
+          </label>
+          <label class="block md:col-span-2">
+            <span class="text-xs text-slate-500">Title (短描述)</span>
+            <input x-model="form.title" required maxlength="200"
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5"
+                   placeholder="5/6 财报 — 利润率改善超预期则补涨" />
+          </label>
+        </div>
+        <label class="block mt-3">
+          <span class="text-xs text-slate-500">Context — 把和其他 AI 的投研对话原文粘贴进来</span>
+          <textarea x-model="form.context" required rows="10"
+                    class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 font-mono text-sm"
+                    placeholder="盯紧 COHR 的财报：5月6号是关键。如果新 CEO 拿出的利润率改善计划超出预期，COHR 的补涨逻辑会比 AAOI 的订单逻辑更具持续性..."></textarea>
+        </label>
+        <div class="grid md:grid-cols-2 gap-3 mt-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">Action hint (可选)</span>
+            <input x-model="form.action_hint"
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5"
+                   placeholder="财报超预期考虑加仓 5/16 call" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">Cooldown 小时数</span>
+            <input x-model.number="form.cooldown_hours" type="number" min="0" max="168"
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5" />
+          </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+          <button type="button" @click="showAdd=false" class="px-3 py-1.5 rounded border border-slate-300">取消</button>
+          <button type="submit" :disabled="busy"
+                  class="px-4 py-1.5 rounded bg-slate-900 text-white disabled:opacity-50">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit modal -->
+  <div x-show="showEdit" x-transition.opacity class="fixed inset-0 bg-black/40 z-40 flex items-start justify-center pt-16 px-4">
+    <div @click.outside="showEdit=false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6" x-show="editing">
+      <h2 class="text-lg font-semibold mb-4">编辑规则</h2>
+      <form @submit.prevent="saveEdit()" x-show="editing">
+        <div class="grid md:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">Ticker</span>
+            <input x-model="editing.ticker" required maxlength="12"
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 font-mono uppercase" />
+          </label>
+          <label class="block md:col-span-2">
+            <span class="text-xs text-slate-500">Title</span>
+            <input x-model="editing.title" required class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5" />
+          </label>
+        </div>
+        <label class="block mt-3">
+          <span class="text-xs text-slate-500">Context</span>
+          <textarea x-model="editing.context" rows="10"
+                    class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 font-mono text-sm"></textarea>
+        </label>
+        <div class="grid md:grid-cols-3 gap-3 mt-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">Action hint</span>
+            <input x-model="editing.action_hint" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">Cooldown 小时数</span>
+            <input x-model.number="editing.cooldown_hours" type="number" min="0" max="168"
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">Status</span>
+            <select x-model="editing.status" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+              <option value="active">active</option>
+              <option value="paused">paused</option>
+              <option value="archived">archived</option>
+            </select>
+          </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+          <button type="button" @click="showEdit=false" class="px-3 py-1.5 rounded border border-slate-300">取消</button>
+          <button type="submit" :disabled="busy"
+                  class="px-4 py-1.5 rounded bg-slate-900 text-white disabled:opacity-50">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Snapshot drawer -->
+  <div x-show="snap.open" x-transition.opacity class="fixed inset-0 bg-black/40 z-40 flex items-start justify-center pt-16 px-4">
+    <div @click.outside="snap.open=false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold font-mono" x-text="snap.ticker"></h2>
+        <button @click="snap.open=false" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+      <pre class="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-[60vh]" x-text="JSON.stringify(snap.data, null, 2)"></pre>
+    </div>
+  </div>
+
+  <div x-show="toast" x-transition class="fixed bottom-4 right-4 bg-slate-900 text-white px-3 py-2 rounded shadow-lg text-sm z-50" x-text="toast"></div>
+</div>
+
+<script>
+function app() {
+  return {
+    tab: 'watchlist',
+    watchlist: [],
+    activity: [],
+    onlyTriggered: false,
+    status: { active_count: 0, triggered_24h: 0, last_tick_run: null },
+    open: {},
+    detail: {},
+    showAdd: false,
+    showEdit: false,
+    editing: null,
+    busy: false,
+    toast: '',
+    form: { ticker: '', title: '', context: '', action_hint: '', cooldown_hours: 6 },
+    snap: { open: false, ticker: '', data: null },
+
+    async boot() {
+      await Promise.all([this.loadWatchlist(), this.loadStatus(), this.loadActivity()]);
+    },
+    async refreshAll() { await this.boot(); this.flash('Refreshed'); },
+
+    async loadWatchlist() {
+      const r = await fetch('/api/watchlist');
+      const j = await r.json();
+      this.watchlist = j.items;
+    },
+    async loadStatus() {
+      const r = await fetch('/api/status');
+      this.status = await r.json();
+    },
+    async loadActivity() {
+      const r = await fetch('/api/judgments?limit=100&only_triggered=' + (this.onlyTriggered ? 'true' : 'false'));
+      const j = await r.json();
+      this.activity = j.items;
+    },
+
+    async toggle(id) {
+      this.open[id] = !this.open[id];
+      if (this.open[id] && !this.detail[id]) {
+        const r = await fetch('/api/watchlist/' + id);
+        const j = await r.json();
+        this.detail[id] = j.judgments;
+      }
+    },
+
+    async create() {
+      this.busy = true;
+      try {
+        const r = await fetch('/api/watchlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.form),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.showAdd = false;
+        this.form = { ticker: '', title: '', context: '', action_hint: '', cooldown_hours: 6 };
+        await Promise.all([this.loadWatchlist(), this.loadStatus()]);
+        this.flash('已添加');
+      } catch (e) { this.flash('保存失败: ' + e.message); }
+      finally { this.busy = false; }
+    },
+
+    async saveEdit() {
+      this.busy = true;
+      try {
+        const id = this.editing.id;
+        const body = {
+          ticker: this.editing.ticker, title: this.editing.title,
+          context: this.editing.context, action_hint: this.editing.action_hint,
+          cooldown_hours: this.editing.cooldown_hours, status: this.editing.status,
+        };
+        const r = await fetch('/api/watchlist/' + id, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.showEdit = false; this.editing = null;
+        await this.loadWatchlist();
+        this.flash('已保存');
+      } catch (e) { this.flash('保存失败: ' + e.message); }
+      finally { this.busy = false; }
+    },
+
+    async setStatus(item, status) {
+      const r = await fetch('/api/watchlist/' + item.id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+      });
+      if (r.ok) { await this.loadWatchlist(); this.flash('Status: ' + status); }
+    },
+
+    async del(item) {
+      if (!confirm('删除 ' + item.ticker + ' — ' + item.title + ' ?')) return;
+      const r = await fetch('/api/watchlist/' + item.id, { method: 'DELETE' });
+      if (r.ok) { await this.loadWatchlist(); this.flash('已删除'); }
+    },
+
+    async snapshot(ticker) {
+      this.snap = { open: true, ticker, data: { loading: true } };
+      const r = await fetch('/api/snapshot/' + ticker + '?refresh=true');
+      this.snap.data = await r.json();
+    },
+
+    fmtTime(ts) {
+      if (!ts) return '';
+      let iso = ts.replace(' ', 'T');
+      if (!iso.includes('Z') && !/[+-]\d{2}:?\d{2}$/.test(iso)) iso += 'Z';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return ts;
+      const diffMin = Math.floor((new Date() - d) / 60000);
+      if (diffMin < 1) return 'just now';
+      if (diffMin < 60) return diffMin + 'm ago';
+      if (diffMin < 1440) return Math.floor(diffMin / 60) + 'h ago';
+      return d.toLocaleString();
+    },
+    flash(msg) { this.toast = msg; setTimeout(() => this.toast = '', 2000); },
+  };
+}
+</script>
+</body>
+</html>
