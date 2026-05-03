@@ -75,15 +75,18 @@ Then `launchctl load ~/Library/LaunchAgents/com.meigu.monitor.plist`.
 
 ## Wiring OpenClaw
 
-Two integrations live in `openclaw/`:
+Two integrations live in `openclaw/`, separated by **invocation mode**:
 
-- [`scheduled-prompt.md`](openclaw/scheduled-prompt.md) — cron-driven tick that
-  runs the watchlist judgment loop. Server hands OpenClaw the system + user
-  prompts so prompt tuning stays server-side.
-- [`memo-skill.md`](openclaw/memo-skill.md) — on-demand "今天有什么投资备忘"
-  query skill. Hits `/api/memos/today` and relays to Telegram.
+- [`scheduled-prompt.md`](openclaw/scheduled-prompt.md) — **system-triggered** cron
+  tick that runs the watchlist judgment loop. Server hands OpenClaw the system +
+  user prompts so prompt tuning stays server-side.
+- [`meigu-skill.md`](openclaw/meigu-skill.md) — **user-triggered** interactive
+  skill. Covers all on-demand operations: memo CRUD, watchlist CRUD, snapshot
+  lookups, and the `/pick` "今天买什么" synthesis. Single dispatch point for
+  any user message addressed to OpenClaw about meigu-monitor.
 
-The tick is the active watcher; the memo skill is the passive recall.
+The cron is the active watcher; the interactive skill is the conversational
+front door.
 
 ## API
 
