@@ -88,6 +88,66 @@ Two integrations live in `openclaw/`, separated by **invocation mode**:
 The cron is the active watcher; the interactive skill is the conversational
 front door.
 
+## Daily usage cheat sheet
+
+Three surfaces, one system:
+
+- **Cron tick** runs on its own. Pushes a Telegram message only when something
+  in your watchlist actually triggers. Silent the rest of the time.
+- **Telegram + OpenClaw** for talking to it on the go. Natural language,
+  no commands to remember.
+- **Dashboard at `http://localhost:8765/`** for managing things in bulk
+  or when you want to see the whole picture.
+
+### Via Telegram (OpenClaw)
+
+| Want to... | Say something like | What happens |
+| --- | --- | --- |
+| Stash a future action | `提醒我下周一买 ADBE 浅 ITM call` | Parses date + ticker → POST `/api/memos` → "已记入备忘 #N，2026-05-11 提醒你" |
+| Same with paste | `5月12号看 NVDA 财报后量能：vol_ratio ≥ 1.5 才动手` | Title + note + remind_on auto-extracted |
+| See today's queue | `今天有什么投资备忘` | List of pending + overdue, with ticker badges |
+| Mark done | `ADBE 那条备忘做完了` | Fuzzy match → PUT `status: done` |
+| Delete | `删了 NVDA 那条备忘` | Fuzzy match → DELETE |
+| Add a watch rule | Paste the AI investment chat + `把这个加到 watchlist` | Auto-detect "粘贴的论点"，title 取第一行，整段进 context |
+| New rule, blank slate | `把 PYPL 加到监控` | Asks back: 主题 / 动作 / 冷却时间，一次问完 |
+| See current watchlist | `现在监控了哪些` | Active rules + 最近一次 judgment urgency |
+| Pause / archive | `把 NOW 暂停` / `归档 MELI` | PUT `status: paused/archived` |
+| Get a "what to buy" read | `今天买什么` / `/pick` | LLM 综合所有 watchlist + 实时数据，分两组回复："已触发 Path A" + "LEAPS 仍在窗口" |
+| Snapshot one ticker | `查下 ADBE 现在数据` | GET `/api/snapshot/ADBE`，返关键字段表格 |
+
+**OpenClaw will never push you unsolicited from this skill** — only the cron
+tick does that. Conversation is pull-only.
+
+### Via dashboard
+
+Open `http://localhost:8765/` and:
+
+- **Watchlist tab** — every active rule, expandable to show full context +
+  recent judgments. `+ New rule` for ad-hoc additions. Pause/edit/delete inline.
+- **Memos tab** — three sections: 今天/已逾期 (amber, top of mind), 即将到,
+  已完成 (collapsed). The header badge counts items requiring your attention today.
+- **Activity tab** — every judgment ever made, filterable to triggers only.
+  Useful for "did the model warn me about this last week?" 复盘.
+
+### What the cron tick does (no action needed from you)
+
+Configured in `openclaw/scheduled-prompt.md`. Every scheduled tick:
+
+1. OpenClaw GETs `/api/tick-payload` — server returns each active rule's
+   current snapshot + the ready-to-use system + user prompt.
+2. OpenClaw forwards prompts to its own LLM, gets back JSON judgments.
+3. POSTs results to `/api/tick-result`. Server stores them, applies cooldown
+   for triggered rules.
+4. Server's response includes a `triggered: [...]` list — OpenClaw turns each
+   into a Telegram message:
+
+   > 🔔 [HIGH] COHR — 5/6 财报
+   > 财报临近(5/7)，RSI 59.84，距 200MA +84%。
+   > 建议：关注 5/7 财报当晚的利润率指引；若超预期再考虑加仓
+   > 详情：http://localhost:8765/
+
+   Empty list → silent. No "everything's fine" pings.
+
 ## API
 
 | Method | Path                          | Purpose                                  |
