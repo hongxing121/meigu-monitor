@@ -75,13 +75,15 @@ Then `launchctl load ~/Library/LaunchAgents/com.meigu.monitor.plist`.
 
 ## Wiring OpenClaw
 
-See [`openclaw/scheduled-prompt.md`](openclaw/scheduled-prompt.md) for the exact
-prompt to paste into your OpenClaw scheduled job and a curl-based smoke test.
+Two integrations live in `openclaw/`:
 
-The contract is intentionally narrow: OpenClaw `GET`s a payload, asks its LLM
-once per item, `POST`s back the results, and messages you for any triggered
-result. The server hands OpenClaw the system + user prompts so prompt tuning
-stays server-side.
+- [`scheduled-prompt.md`](openclaw/scheduled-prompt.md) — cron-driven tick that
+  runs the watchlist judgment loop. Server hands OpenClaw the system + user
+  prompts so prompt tuning stays server-side.
+- [`memo-skill.md`](openclaw/memo-skill.md) — on-demand "今天有什么投资备忘"
+  query skill. Hits `/api/memos/today` and relays to Telegram.
+
+The tick is the active watcher; the memo skill is the passive recall.
 
 ## API
 
@@ -97,7 +99,13 @@ stays server-side.
 | GET    | `/api/tick-payload`           | **OpenClaw entrypoint** — full job spec  |
 | POST   | `/api/tick-result`            | OpenClaw posts judgments back here       |
 | GET    | `/api/judgments`              | Recent judgments (for dashboard)         |
-| GET    | `/api/status`                 | Last tick + counts                       |
+| GET    | `/api/status`                 | Last tick + counts (incl. memos_today)   |
+| GET    | `/api/memos`                  | List memos (filter=active/today/upcoming/done/all) |
+| POST   | `/api/memos`                  | Create memo                              |
+| GET    | `/api/memos/today`            | OpenClaw entrypoint — today + overdue    |
+| GET    | `/api/memos/{id}`             | One memo                                 |
+| PUT    | `/api/memos/{id}`             | Update / mark done / dismiss             |
+| DELETE | `/api/memos/{id}`             | Delete                                   |
 
 ## Indicators captured per snapshot
 

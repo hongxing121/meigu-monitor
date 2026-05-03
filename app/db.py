@@ -52,6 +52,19 @@ CREATE TABLE IF NOT EXISTS tick_runs (
     source          TEXT    DEFAULT 'openclaw',
     note            TEXT    DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS memos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL,
+    note        TEXT    NOT NULL DEFAULT '',
+    ticker      TEXT    NOT NULL DEFAULT '',
+    remind_on   TEXT    NOT NULL DEFAULT (date('now')),
+    status      TEXT    NOT NULL DEFAULT 'pending',
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_memos_status_due ON memos(status, remind_on);
 """
 
 
@@ -298,3 +311,107 @@ def latest_tick_run() -> dict[str, Any] | None:
             "SELECT * FROM tick_runs ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
     return _row_to_dict(row)
+
+
+# --- memos ---
+
+
+def list_memos(
+    *,
+    filter_kind: str = "active",  # active | today | upcoming | done | all
+) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM memos"
+    where: list[str] = []
+    params: list[Any] = []
+    if filter_kind == "active":
+        where.append("status = 'pending'")
+    elif filter_kind == "today":
+        where.append("status = 'pending' AND remind_on <= date('now')")
+    elif filter_kind == "upcoming":
+        where.append("status = 'pending' AND remind_on > date('now')")
+    elif filter_kind == "done":
+        where.append("status = 'done'")
+    elif filter_kind == "all":
+        pass
+    else:
+        raise ValueError(f"unknown filter_kind: {filter_kind}")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    # Earlier remind_on first within active/today (overdue surfaces top); newest first within done.
+    if filter_kind in ("active", "today", "upcoming"):
+        sql += " ORDER BY remind_on ASC, created_at DESC"
+    else:
+        sql += " ORDER BY updated_at DESC"
+    with conn() as c:
+        rows = c.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_memo(memo_id: int) -> dict[str, Any] | None:
+    with conn() as c:
+        row = c.execute("SELECT * FROM memos WHERE id=?", (memo_id,)).fetchone()
+    return _row_to_dict(row)
+
+
+def create_memo(
+    title: str,
+    note: str = "",
+    ticker: str = "",
+    remind_on: str | None = None,
+) -> int:
+    with conn() as c:
+        if remind_on:
+            cur = c.execute(
+                "INSERT INTO memos (title, note, ticker, remind_on) VALUES (?, ?, ?, ?)",
+                (title.strip(), note, ticker.upper().strip(), remind_on),
+            )
+        else:
+            cur = c.execute(
+                "INSERT INTO memos (title, note, ticker) VALUES (?, ?, ?)",
+                (title.strip(), note, ticker.upper().strip()),
+            )
+        return int(cur.lastrowid)
+
+
+def update_memo(
+    memo_id: int,
+    *,
+    title: str | None = None,
+    note: str | None = None,
+    ticker: str | None = None,
+    remind_on: str | None = None,
+    status: str | None = None,
+) -> bool:
+    fields: list[str] = []
+    values: list[Any] = []
+    if title is not None:
+        fields.append("title=?")
+        values.append(title.strip())
+    if note is not None:
+        fields.append("note=?")
+        values.append(note)
+    if ticker is not None:
+        fields.append("ticker=?")
+        values.append(ticker.upper().strip())
+    if remind_on is not None:
+        fields.append("remind_on=?")
+        values.append(remind_on)
+    if status is not None:
+        fields.append("status=?")
+        values.append(status)
+    if not fields:
+        return False
+    fields.append("updated_at=datetime('now')")
+    values.append(memo_id)
+    with conn() as c:
+        cur = c.execute(
+            f"UPDATE memos SET {', '.join(fields)} WHERE id=?",
+            values,
+        )
+        return cur.rowcount > 0
+
+
+def delete_memo(memo_id: int) -> bool:
+    with conn() as c:
+        cur = c.execute("DELETE FROM memos WHERE id=?", (memo_id,))
+        return cur.rowcount > 0

@@ -12,7 +12,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import db, fetcher
-from .models import JudgmentResult, TickResultPost, WatchlistCreate, WatchlistUpdate
+from .models import (
+    JudgmentResult,
+    MemoCreate,
+    MemoUpdate,
+    TickResultPost,
+    WatchlistCreate,
+    WatchlistUpdate,
+)
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -240,11 +247,94 @@ def api_status() -> dict[str, Any]:
         t for t in triggered
         if datetime.fromisoformat(t["created_at"]).replace(tzinfo=timezone.utc) >= cutoff
     ]
+    memos_today = db.list_memos(filter_kind="today")
     return {
         "last_tick_run": last_run,
         "active_count": len(active),
         "triggered_24h": len(triggered_24h),
+        "memos_today_count": len(memos_today),
     }
+
+
+# --- memos: future-action reminders the user can stash and recall later ---
+
+
+_VALID_MEMO_FILTERS = {"active", "today", "upcoming", "done", "all"}
+
+
+@app.get("/api/memos")
+def api_list_memos(filter: str = "active") -> dict[str, Any]:
+    if filter not in _VALID_MEMO_FILTERS:
+        raise HTTPException(400, f"filter must be one of {sorted(_VALID_MEMO_FILTERS)}")
+    return {"items": db.list_memos(filter_kind=filter)}
+
+
+@app.post("/api/memos")
+def api_create_memo(payload: MemoCreate) -> dict[str, Any]:
+    new_id = db.create_memo(
+        title=payload.title,
+        note=payload.note,
+        ticker=payload.ticker,
+        remind_on=payload.remind_on,
+    )
+    return {"id": new_id, "item": db.get_memo(new_id)}
+
+
+@app.get("/api/memos/today")
+def api_memos_today() -> dict[str, Any]:
+    """Convenience endpoint for OpenClaw's '今天有什么备忘' skill.
+
+    Returns pending memos with remind_on <= today (today's items + anything overdue).
+    The shape is deliberately friendly for an LLM to format directly.
+    """
+    from datetime import date
+
+    items = db.list_memos(filter_kind="today")
+    today = date.today().isoformat()
+    enriched = [
+        {**m, "is_overdue": m["remind_on"] < today}
+        for m in items
+    ]
+    return {
+        "today": today,
+        "count": len(enriched),
+        "items": enriched,
+        "summary_for_user": (
+            f"今天 {today} 有 {len(enriched)} 条投资备忘待处理"
+            if enriched
+            else f"今天 {today} 没有待处理的投资备忘"
+        ),
+    }
+
+
+@app.get("/api/memos/{memo_id}")
+def api_get_memo(memo_id: int) -> dict[str, Any]:
+    item = db.get_memo(memo_id)
+    if item is None:
+        raise HTTPException(404, "memo not found")
+    return {"item": item}
+
+
+@app.put("/api/memos/{memo_id}")
+def api_update_memo(memo_id: int, payload: MemoUpdate) -> dict[str, Any]:
+    if db.get_memo(memo_id) is None:
+        raise HTTPException(404, "memo not found")
+    db.update_memo(
+        memo_id,
+        title=payload.title,
+        note=payload.note,
+        ticker=payload.ticker,
+        remind_on=payload.remind_on,
+        status=payload.status,
+    )
+    return {"item": db.get_memo(memo_id)}
+
+
+@app.delete("/api/memos/{memo_id}")
+def api_delete_memo(memo_id: int) -> dict[str, Any]:
+    if not db.delete_memo(memo_id):
+        raise HTTPException(404, "memo not found")
+    return {"ok": True}
 
 
 @app.exception_handler(Exception)

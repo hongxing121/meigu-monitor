@@ -40,3 +40,18 @@ class TickResultPost(BaseModel):
     tick_run_id: int | None = None
     source: str = "openclaw"
     results: list[JudgmentResult]
+
+
+class MemoCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    note: str = ""
+    ticker: str = ""
+    remind_on: str | None = None  # YYYY-MM-DD; defaults to today server-side
+
+
+class MemoUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    note: str | None = None
+    ticker: str | None = None
+    remind_on: str | None = None
+    status: Literal["pending", "done", "dismissed"] | None = None

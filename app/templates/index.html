@@ -30,6 +30,13 @@
           class="px-3 py-1.5 rounded-md text-sm font-medium">Watchlist
           <span class="ml-1 text-xs opacity-70" x-text="status.active_count"></span>
         </button>
+        <button @click="tab='memos'; loadMemos()"
+          :class="tab==='memos' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
+          class="px-3 py-1.5 rounded-md text-sm font-medium">Memos
+          <span x-show="status.memos_today_count > 0"
+                class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-amber-200 text-amber-900 font-semibold"
+                x-text="status.memos_today_count"></span>
+        </button>
         <button @click="tab='activity'"
           :class="tab==='activity' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'"
           class="px-3 py-1.5 rounded-md text-sm font-medium">Activity
@@ -46,9 +53,16 @@
         <button @click="refreshAll()" class="px-2 py-1 rounded border border-slate-300 hover:bg-slate-50 text-slate-700">
           Refresh
         </button>
-        <button @click="showAdd=true" class="px-3 py-1 rounded bg-slate-900 text-white hover:bg-slate-700">
-          + New rule
-        </button>
+        <template x-if="tab !== 'memos'">
+          <button @click="showAdd=true" class="px-3 py-1 rounded bg-slate-900 text-white hover:bg-slate-700">
+            + New rule
+          </button>
+        </template>
+        <template x-if="tab === 'memos'">
+          <button @click="resetMemoForm(); showMemoAdd=true" class="px-3 py-1 rounded bg-slate-900 text-white hover:bg-slate-700">
+            + New memo
+          </button>
+        </template>
       </div>
     </div>
   </header>
@@ -150,6 +164,105 @@
           </div>
         </template>
       </div>
+    </section>
+
+    <!-- Memos tab -->
+    <section x-show="tab==='memos'">
+      <template x-if="memos.today.length === 0 && memos.upcoming.length === 0 && memos.done.length === 0">
+        <div class="text-center py-16 text-slate-400">
+          <p class="mb-3">还没有投资备忘。</p>
+          <button @click="resetMemoForm(); showMemoAdd=true" class="px-4 py-2 rounded bg-slate-900 text-white">
+            添加第一条
+          </button>
+        </div>
+      </template>
+
+      <!-- 今天 / 已逾期 -->
+      <template x-if="memos.today.length > 0">
+        <div class="mb-6">
+          <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            今天 / 已逾期
+            <span class="text-xs text-slate-400" x-text="'(' + memos.today.length + ')'"></span>
+          </h3>
+          <div class="space-y-2">
+            <template x-for="m in memos.today" :key="m.id">
+              <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div class="flex items-start gap-3">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-medium text-slate-900" x-text="m.title"></span>
+                      <span x-show="m.ticker" class="font-mono text-xs px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded" x-text="m.ticker"></span>
+                      <span x-show="m.is_overdue" class="text-xs px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded font-medium">逾期</span>
+                      <span class="text-xs text-slate-500" x-text="m.remind_on"></span>
+                    </div>
+                    <p x-show="m.note" class="text-sm text-slate-600 mt-1 whitespace-pre-wrap" x-text="m.note"></p>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button @click="markMemoDone(m)" title="标记完成"
+                            class="px-2 py-1 text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50">完成</button>
+                    <button @click="editMemo(m)" title="编辑"
+                            class="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-100">编辑</button>
+                    <button @click="deleteMemo(m)" title="删除"
+                            class="px-2 py-1 text-xs rounded border border-rose-300 text-rose-700 hover:bg-rose-50">删除</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <!-- 即将到 -->
+      <template x-if="memos.upcoming.length > 0">
+        <div class="mb-6">
+          <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+            即将到
+            <span class="text-xs text-slate-400" x-text="'(' + memos.upcoming.length + ')'"></span>
+          </h3>
+          <div class="space-y-2">
+            <template x-for="m in memos.upcoming" :key="m.id">
+              <div class="bg-white border border-slate-200 rounded-lg p-3">
+                <div class="flex items-start gap-3">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-medium text-slate-900" x-text="m.title"></span>
+                      <span x-show="m.ticker" class="font-mono text-xs px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded" x-text="m.ticker"></span>
+                      <span class="text-xs text-slate-500" x-text="m.remind_on"></span>
+                    </div>
+                    <p x-show="m.note" class="text-sm text-slate-600 mt-1 whitespace-pre-wrap" x-text="m.note"></p>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button @click="editMemo(m)" class="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-100">编辑</button>
+                    <button @click="deleteMemo(m)" class="px-2 py-1 text-xs rounded border border-rose-300 text-rose-700 hover:bg-rose-50">删除</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <!-- 已完成（折叠）-->
+      <template x-if="memos.done.length > 0">
+        <details class="bg-white border border-slate-200 rounded-lg">
+          <summary class="px-3 py-2 cursor-pointer text-sm text-slate-600 hover:bg-slate-50">
+            已完成 / 已忽略
+            <span class="text-xs text-slate-400" x-text="'(' + memos.done.length + ')'"></span>
+          </summary>
+          <div class="px-3 pb-3 space-y-2">
+            <template x-for="m in memos.done" :key="m.id">
+              <div class="text-sm text-slate-500 flex items-center gap-2 py-1 border-t border-slate-100">
+                <span class="line-through" x-text="m.title"></span>
+                <span x-show="m.ticker" class="font-mono text-xs px-1 bg-slate-100 rounded" x-text="m.ticker"></span>
+                <span class="text-xs text-slate-400 ml-auto" x-text="m.remind_on"></span>
+                <button @click="deleteMemo(m)" class="text-xs text-rose-500 hover:underline">删除</button>
+              </div>
+            </template>
+          </div>
+        </details>
+      </template>
     </section>
 
     <!-- Activity tab -->
@@ -290,6 +403,44 @@
     </div>
   </div>
 
+  <!-- Memo add/edit modal -->
+  <div x-show="showMemoAdd" x-transition.opacity class="fixed inset-0 bg-black/40 z-40 flex items-start justify-center pt-16 px-4">
+    <div @click.outside="showMemoAdd=false" class="bg-white rounded-lg shadow-xl w-full max-w-xl p-6">
+      <h2 class="text-lg font-semibold mb-4" x-text="memoForm.id ? '编辑投资备忘' : '添加投资备忘'"></h2>
+      <form @submit.prevent="saveMemo()">
+        <label class="block">
+          <span class="text-xs text-slate-500">标题（短描述）</span>
+          <input x-model="memoForm.title" required maxlength="200"
+                 class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5"
+                 placeholder="例：下周一买 ADBE 浅 ITM call" />
+        </label>
+        <div class="grid md:grid-cols-2 gap-3 mt-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">关联 Ticker（可选）</span>
+            <input x-model="memoForm.ticker" maxlength="12"
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 font-mono uppercase" placeholder="ADBE" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">提醒日期</span>
+            <input x-model="memoForm.remind_on" type="date" required
+                   class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5" />
+          </label>
+        </div>
+        <label class="block mt-3">
+          <span class="text-xs text-slate-500">详细内容（可选）— 把原始消息整段粘进来都行</span>
+          <textarea x-model="memoForm.note" rows="6"
+                    class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                    placeholder="财报当天 vol_ratio ≥ 1.2 才动手；Jan 2027 230C 浅 ITM；..."></textarea>
+        </label>
+        <div class="mt-5 flex justify-end gap-2">
+          <button type="button" @click="showMemoAdd=false" class="px-3 py-1.5 rounded border border-slate-300">取消</button>
+          <button type="submit" :disabled="busy"
+                  class="px-4 py-1.5 rounded bg-slate-900 text-white disabled:opacity-50">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Snapshot drawer -->
   <div x-show="snap.open" x-transition.opacity class="fixed inset-0 bg-black/40 z-40 flex items-start justify-center pt-16 px-4">
     <div @click.outside="snap.open=false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
@@ -310,20 +461,23 @@ function app() {
     tab: 'watchlist',
     watchlist: [],
     activity: [],
+    memos: { today: [], upcoming: [], done: [] },
     onlyTriggered: false,
-    status: { active_count: 0, triggered_24h: 0, last_tick_run: null },
+    status: { active_count: 0, triggered_24h: 0, memos_today_count: 0, last_tick_run: null },
     open: {},
     detail: {},
     showAdd: false,
     showEdit: false,
+    showMemoAdd: false,
     editing: null,
     busy: false,
     toast: '',
     form: { ticker: '', title: '', context: '', action_hint: '', cooldown_hours: 6 },
+    memoForm: { id: null, title: '', note: '', ticker: '', remind_on: '' },
     snap: { open: false, ticker: '', data: null },
 
     async boot() {
-      await Promise.all([this.loadWatchlist(), this.loadStatus(), this.loadActivity()]);
+      await Promise.all([this.loadWatchlist(), this.loadStatus(), this.loadActivity(), this.loadMemos()]);
     },
     async refreshAll() { await this.boot(); this.flash('Refreshed'); },
 
@@ -405,6 +559,83 @@ function app() {
       this.snap = { open: true, ticker, data: { loading: true } };
       const r = await fetch('/api/snapshot/' + ticker + '?refresh=true');
       this.snap.data = await r.json();
+    },
+
+    // --- memos ---
+    async loadMemos() {
+      const [today, upcoming, done] = await Promise.all([
+        fetch('/api/memos?filter=today').then(r => r.json()),
+        fetch('/api/memos?filter=upcoming').then(r => r.json()),
+        fetch('/api/memos?filter=done').then(r => r.json()),
+      ]);
+      const todayISO = new Date().toISOString().slice(0, 10);
+      this.memos = {
+        today: today.items.map(m => ({ ...m, is_overdue: m.remind_on < todayISO })),
+        upcoming: upcoming.items,
+        done: done.items,
+      };
+    },
+
+    resetMemoForm() {
+      this.memoForm = {
+        id: null, title: '', note: '', ticker: '',
+        remind_on: new Date().toISOString().slice(0, 10),
+      };
+    },
+
+    editMemo(m) {
+      this.memoForm = {
+        id: m.id, title: m.title, note: m.note || '', ticker: m.ticker || '',
+        remind_on: m.remind_on,
+      };
+      this.showMemoAdd = true;
+    },
+
+    async saveMemo() {
+      this.busy = true;
+      try {
+        const body = {
+          title: this.memoForm.title,
+          note: this.memoForm.note,
+          ticker: this.memoForm.ticker,
+          remind_on: this.memoForm.remind_on,
+        };
+        let r;
+        if (this.memoForm.id) {
+          r = await fetch('/api/memos/' + this.memoForm.id, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          });
+        } else {
+          r = await fetch('/api/memos', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          });
+        }
+        if (!r.ok) throw new Error(await r.text());
+        this.showMemoAdd = false;
+        await Promise.all([this.loadMemos(), this.loadStatus()]);
+        this.flash(this.memoForm.id ? '已更新' : '已添加');
+      } catch (e) { this.flash('保存失败: ' + e.message); }
+      finally { this.busy = false; }
+    },
+
+    async markMemoDone(m) {
+      const r = await fetch('/api/memos/' + m.id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'done' }),
+      });
+      if (r.ok) {
+        await Promise.all([this.loadMemos(), this.loadStatus()]);
+        this.flash('已标记完成');
+      }
+    },
+
+    async deleteMemo(m) {
+      if (!confirm('删除备忘 "' + m.title + '" ?')) return;
+      const r = await fetch('/api/memos/' + m.id, { method: 'DELETE' });
+      if (r.ok) {
+        await Promise.all([this.loadMemos(), this.loadStatus()]);
+        this.flash('已删除');
+      }
     },
 
     fmtTime(ts) {
